@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BitbotV7</title>
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="%23f7931a"/><text x="50" y="68" font-size="70" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-weight="bold">B</text></svg>' type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    body { background: #0d1117; color: #e6edf3; font-size: 0.875rem; }
+    .navbar { background: #161b22 !important; border-bottom: 1px solid #30363d; }
+    .card { background: #161b22; border: 1px solid #30363d; }
+    .card-header { background: #1c2128; border-bottom: 1px solid #30363d; font-weight: 600; cursor: pointer; user-select: none; }
+    .card-header:hover { background: #21262d; }
+    .card-header .chevron { transition: transform 0.2s ease; }
+    .card-header.collapsed .chevron { transform: rotate(-90deg); }
+    .stat-value { font-size: 1.4rem; font-weight: 700; }
+    .stat-label { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; }
+    .badge-mode { font-size: 0.7rem; }
+    .pnl-pos { color: #3fb950; }
+    .pnl-neg { color: #f85149; }
+    .pnl-zero { color: #8b949e; }
+    #priceDisplay { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
+    .trade-row td { font-size: 0.8rem; padding: 0.35rem 0.5rem; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot-running { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+    .dot-stopped { background: #6e7681; }
+    .dot-emergency { background: #f85149; box-shadow: 0 0 6px #f85149; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    canvas { max-height: 300px; }
+    .btn-sm { font-size: 0.78rem; }
+    select.form-select-sm, input.form-control-sm { font-size: 0.8rem; }
+    .position-card { background: #1c2128; border: 1px solid #388bfd44; border-radius: 8px; }
+    .btc-symbol { color: #f7931a; font-weight: bold; font-size: 1.2em; text-shadow: 0 0 4px rgba(247,147,26,0.5); }
+
+    /* ── Trade log ── */
+    .tlog-summary { background: #1c2128; border-radius: 6px; padding: 0.6rem 0.8rem; }
+    .tlog-filters { gap: 0.5rem; flex-wrap: wrap; }
+    .tlog-entry { transition: background 0.15s; }
+    .tlog-entry:hover { background: #21262d; }
+    .tlog-duration { font-size: 0.75rem; color: #8b949e; }
+
+    /* ── Activity terminal ── */
+    #activityLog {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.78rem;
+      height: 320px;
+      overflow-y: auto;
+      padding: 0.5rem 0.75rem;
+    }
+    .act-ts { color: #8b949e; margin-right: 0.4rem; }
+    .act-BOT       { color: #58a6ff; }
+    .act-SIGNAL    { color: #e3b341; }
+    .act-POSITION_OPENED { color: #3fb950; font-weight: 600; }
+    .act-POSITION_CLOSED { color: #f85149; font-weight: 600; }
+    .act-RISK      { color: #f85149; }
+    .act-INFO      { color: #8b949e; }
+    .act-badge {
+      display: inline-block; font-size: 0.65rem; padding: 0 0.35rem;
+      border-radius: 3px; margin-right: 0.3rem; background: #21262d;
+    }
+    .act-badge-BOT            { background: #1f6feb44; color: #58a6ff; }
+    .act-badge-SIGNAL         { background: #9e6a0344; color: #e3b341; }
+    .act-badge-POSITION_OPENED{ background: #2ea04344; color: #3fb950; }
+    .act-badge-POSITION_CLOSED{ background: #8b221844; color: #f85149; }
+    .act-badge-RISK           { background: #8b221844; color: #f85149; }
+
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark px-3 py-2">
+  <span class="navbar-brand fw-bold"><span class="btc-symbol">B</span>itbotV7</span>
+  <div class="d-flex align-items-center gap-3">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText" class="text-secondary small">—</span>
+    <span class="badge bg-secondary badge-mode" id="modeBadge">paper</span>
+    <span class="badge bg-info badge-mode text-dark" id="styleBadge">scalping</span>
+  </div>
+</nav>
+
+<div class="container-fluid px-3 py-3">
+  <div class="row g-3">
+
+    <!-- ══════════════════ LEFT PANEL ══════════════════ -->
+    <div class="col-12 col-xl-3">
+
+      <!-- Price (always visible, no collapse) -->
+      <div class="card mb-3">
+        <div class="card-body py-3">
+          <div class="stat-label mb-1" id="symbolLabel">BTCUSDT</div>
+          <div id="priceDisplay" class="pnl-zero">—</div>
+          <div class="mt-1">
+            <span id="change24h" class="small fw-semibold">—</span>
+            <span class="text-secondary small ms-2">24h</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bot Controls -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center"
+             data-panel="botControls" onclick="togglePanel('botControls')">
+          <span><i class="bi bi-robot me-1"></i>Bot Controls</span>
+          <i class="bi bi-chevron-down chevron"></i>
+        </div>
+        <div id="botControls" class="collapse">
+          <div class="card-body">
+            <div class="d-grid gap-2 mb-3">
+              <button class="btn btn-success btn-sm" id="btnStart" onclick="botAction('start')">
+                <i class="bi bi-play-fill"></i> Start Bot
+              </button>
+              <button class="btn btn-danger btn-sm" id="btnStop" onclick="botAction('stop')">
+                <i class="bi bi-stop-fill"></i> Stop Bot
+              </button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="botAction('reset')">
+                <i class="bi bi-arrow-counterclockwise"></i> Reset Portfolio
+              </button>
+            </div>
+            <div class="mb-2">
+              <label class="stat-label mb-1">Mode</label>
+              <select class="form-select form-select-sm" id="modeSelect" onchange="switchMode(this.value)">
+                <option value="paper">Paper</option>
+                <option value="testnet">Testnet</option>
+                <option value="live">Live</option>
+              </select>
+            </div>
+            <div>
+              <label class="stat-label mb-1">Style</label>
+              <select class="form-select form-select-sm" id="styleSelect" onchange="updateConfig({style:this.value})">
+                <option value="scalping">Scalping</option>
+                <option value="day_trading">Day Trading</option>
+                <option value="swing_trading">Swing Trading</option>
+              </select>
+            </div>
+            <div class="mt-3">
+              <label class="stat-label mb-1">Manual Trade</label>
+              <div class="d-flex gap-2">
+                <button class="btn btn-success btn-sm" onclick="openManual('LONG')">
+                  <i class="bi bi-arrow-up-circle"></i> Long
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="openManual('SHORT')">
+                  <i class="bi bi-arrow-down-circle"></i> Short
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Portfolio -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center"
+             data-panel="portfolio" onclick="togglePanel('portfolio')">
+          <span><i class="bi bi-wallet2 me-1"></i>Portfolio</span>
+          <i class="bi bi-chevron-down chevron"></i>
+        </div>
+        <div id="portfolio" class="collapse">
+          <div class="card-body">
+            <div class="row g-2 text-center">
+              <div class="col-6">
+                <div class="stat-label">Capital</div>
+                <div class="stat-value" id="capital">—</div>
+              </div>
+              <div class="col-6">
+                <div class="stat-label">Total P&L</div>
+                <div class="stat-value" id="totalPnl">—</div>
+              </div>
+              <div class="col-6">
+                <div class="stat-label">Day P&L</div>
+                <div class="fw-semibold" id="dayPnl">—</div>
+              </div>
+              <div class="col-6">
+                <div class="stat-label">Win Rate</div>
+                <div class="fw-semibold" id="winRate">—</div>
+              </div>
+              <div class="col-6">
+                <div class="stat-label">Day Trades</div>
+                <div id="dayTrades">—</div>
+              </div>
+              <div class="col-6">
+                <div class="stat-label">Total Trades</div>
+                <div id="totalTrades">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Session -->
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center"
+             data-panel="session" onclick="togglePanel('session')">
+          <span><i class="bi bi-clock me-1"></i>Session</span>
+          <i class="bi bi-chevron-down chevron"></i>
+        </div>
+        <div id="session" class="collapse">
+          <div class="card-body">
+            <div class="d-flex justify-content-between mb-1">
+              <span class="stat-label">Session</span>
+              <span class="badge bg-primary" id="sessionName">—</span>
+            </div>
+            <div class="small text-secondary" id="sessionRec">—</div>
+            <div id="positionInfo" class="mt-2 d-none">
+              <hr class="my-2 border-secondary" />
+              <div class="stat-label mb-1">Open Position</div>
+              <div class="fw-semibold" id="piSide">—</div>
+              <div class="small">Entry: <span class="text-info" id="piEntry">—</span></div>
+              <div class="small">TP: <span class="pnl-pos" id="piTP">—</span>
+                &nbsp; SL: <span class="pnl-neg" id="piSL">—</span></div>
+            </div>
+            <div class="row g-1 mt-2 text-center">
+              <div class="col-6">
+                <div class="stat-label">ATR</div>
+                <div id="atrVal">—</div>
+              </div>
+              <div class="col-6">
+                <div class="stat-label">Vol Ratio</div>
+                <div id="volRatio">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /LEFT PANEL -->
+
+    <!-- ══════════════════ RIGHT PANEL ══════════════════ -->
+    <div class="col-12 col-xl-9">
+
+      <!-- Price Chart -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center"
+             data-panel="priceChart" onclick="togglePanel('priceChart')">
+          <span><i class="bi bi-bar-chart-line me-1"></i>Price Chart</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="btn-group btn-group-sm" id="tfBtnGroup" role="group" onclick="event.stopPropagation()">
+              <button class="btn btn-outline-secondary active" onclick="loadChart('1m',this)">1m</button>
+              <button class="btn btn-outline-secondary" onclick="loadChart('5m',this)">5m</button>
+              <button class="btn btn-outline-secondary" onclick="loadChart('15m',this)">15m</button>
+              <button class="btn btn-outline-secondary" onclick="loadChart('1h',this)">1h</button>
+              <button class="btn btn-outline-secondary" onclick="loadChart('4h',this)">4h</button>
+              <button class="btn btn-outline-secondary" onclick="loadChart('1d',this)">1D</button>
+            </div>
+            <i class="bi bi-chevron-down chevron"></i>
+          </div>
+        </div>
+        <div id="priceChart" class="collapse show">
+          <div class="card-body py-2">
+            <canvas id="priceChartCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- MACD -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center"
+             data-panel="macdChart" onclick="togglePanel('macdChart')">
+          <span><i class="bi bi-activity me-1"></i>MACD</span>
+          <i class="bi bi-chevron-down chevron"></i>
+        </div>
+        <div id="macdChart" class="collapse show">
+          <div class="card-body py-2">
+            <canvas id="macdChartCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Open Position -->
+      <div id="positionSection" class="mb-3 d-none">
+        <div class="position-card p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold"><i class="bi bi-lightning-fill text-warning me-1"></i>Open Position</span>
+            <button class="btn btn-outline-danger btn-sm" onclick="closePosition()">
+              <i class="bi bi-x-circle"></i> Close
+            </button>
+          </div>
+          <div class="row g-2 text-center" id="positionDetails"></div>
+        </div>
+      </div>
+
+      <!-- ── Trade Log ── -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center"
+             data-panel="tradeLog" onclick="togglePanel('tradeLog')">
+          <span><i class="bi bi-journal-text me-1"></i>Trade Log</span>
+          <i class="bi bi-chevron-down chevron"></i>
+        </div>
+        <div id="tradeLog" class="collapse show">
+          <div class="card-body">
+
+            <!-- Summary stats -->
+            <div class="row g-2 mb-3" id="tradeLogSummary">
+              <div class="col-6 col-md-3">
+                <div class="tlog-summary text-center">
+                  <div class="stat-label">Today</div>
+                  <div class="fw-bold" id="tlToday">0 trades</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="tlog-summary text-center">
+                  <div class="stat-label">Win Rate</div>
+                  <div class="fw-bold" id="tlWinRate">—</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="tlog-summary text-center">
+                  <div class="stat-label">Avg Duration</div>
+                  <div class="fw-bold" id="tlAvgDuration">—</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="tlog-summary text-center">
+                  <div class="stat-label">Best Trade</div>
+                  <div class="fw-bold pnl-pos" id="tlBest">—</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="d-flex tlog-filters mb-2" onclick="event.stopPropagation()">
+              <div class="btn-group btn-group-sm" id="sideFilter">
+                <button class="btn btn-outline-secondary active" onclick="setFilter('side','ALL',this)">All</button>
+                <button class="btn btn-outline-success" onclick="setFilter('side','LONG',this)">Long</button>
+                <button class="btn btn-outline-danger" onclick="setFilter('side','SHORT',this)">Short</button>
+              </div>
+              <div class="btn-group btn-group-sm ms-2" id="dateFilter">
+                <button class="btn btn-outline-secondary active" onclick="setFilter('date','all',this)">All Time</button>
+                <button class="btn btn-outline-secondary" onclick="setFilter('date','today',this)">Today</button>
+                <button class="btn btn-outline-secondary" onclick="setFilter('date','7d',this)">7 Days</button>
+              </div>
+              <div class="btn-group btn-group-sm ms-2" id="sortFilter">
+                <button class="btn btn-outline-secondary active" onclick="setFilter('sort','time',this)">Time</button>
+                <button class="btn btn-outline-secondary" onclick="setFilter('sort','pnl',this)">P&L</button>
+                <button class="btn btn-outline-secondary" onclick="setFilter('sort','duration',this)">Duration</button>
+              </div>
+            </div>
+
+            <!-- Table -->
+            <div class="table-responsive">
+              <table class="table table-dark table-hover mb-0">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Side</th><th>Entry Price</th><th>Entry Time</th>
+                    <th>Exit Price</th><th>Exit Time</th><th>Duration</th>
+                    <th>Qty</th><th>PnL</th><th>Signal</th>
+                  </tr>
+                </thead>
+                <tbody id="tradesTable">
+                  <tr><td colspan="10" class="text-center text-secondary py-3">No trades yet</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Live Bot Activity ── -->
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center"
+             data-panel="liveActivity" onclick="togglePanel('liveActivity')">
+          <span><i class="bi bi-terminal me-1"></i>Live Bot Activity</span>
+          <div class="d-flex align-items-center gap-2" onclick="event.stopPropagation()">
+            <span class="badge bg-secondary" id="activityCount">0 events</span>
+            <button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="clearActivityLog()" title="Clear log">
+              <i class="bi bi-trash3"></i>
+            </button>
+            <i class="bi bi-chevron-down chevron" onclick="event.stopPropagation(); togglePanel('liveActivity')"></i>
+          </div>
+        </div>
+        <div id="liveActivity" class="collapse show">
+          <div class="card-body p-2">
+            <div id="activityLog"></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /RIGHT PANEL -->
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="toast" class="toast align-items-center text-bg-dark border-secondary" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="toastMsg"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let priceChart = null, macdChart = null;
+let currentTf = '1m';
+const POLL_MS = 5000;
+
+// Trade log filter state
+const filters = { side: 'ALL', date: 'all', sort: 'time' };
+let allTrades = [];
+let currentPosition = null;
+
+// Activity log
+let lastActivityId = 0;
+let localActivityLog = [];
+let activitySource = null;
+
+// ─── Collapsible Panels ───────────────────────────────────────────────────────
+const PANEL_STORAGE_KEY = 'bbv7_panels';
+// Panels shown by default (others collapsed)
+const DEFAULT_OPEN = new Set(['priceChart', 'macdChart', 'tradeLog', 'liveActivity', 'botControls', 'portfolio', 'session']);
+
+function loadPanelStates() {
+  try {
+    const saved = localStorage.getItem(PANEL_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch { return null; }
+}
+
+function savePanelStates() {
+  const states = {};
+  document.querySelectorAll('[data-panel]').forEach(h => {
+    const id = h.dataset.panel;
+    const target = document.getElementById(id);
+    if (target) states[id] = target.classList.contains('show');
+  });
+  localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify(states));
+}
+
+function togglePanel(id) {
+  const target = document.getElementById(id);
+  const header = document.querySelector(`[data-panel="${id}"]`);
+  if (!target) return;
+  const bsCollapse = bootstrap.Collapse.getOrCreateInstance(target, { toggle: false });
+  if (target.classList.contains('show')) {
+    bsCollapse.hide();
+    header && header.classList.add('collapsed');
+  } else {
+    bsCollapse.show();
+    header && header.classList.remove('collapsed');
+  }
+  savePanelStates();
+}
+
+function initPanels() {
+  const saved = loadPanelStates();
+  document.querySelectorAll('[data-panel]').forEach(h => {
+    const id = h.dataset.panel;
+    const target = document.getElementById(id);
+    if (!target) return;
+    const shouldShow = saved ? (saved[id] !== false) : DEFAULT_OPEN.has(id);
+    if (shouldShow) {
+      target.classList.add('show');
+      h.classList.remove('collapsed');
+    } else {
+      target.classList.remove('show');
+      h.classList.add('collapsed');
+    }
+    bootstrap.Collapse.getOrCreateInstance(target, { toggle: false });
+  });
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+function pnlClass(v) {
+  return v > 0 ? 'pnl-pos' : (v < 0 ? 'pnl-neg' : 'pnl-zero');
+}
+function fmt(v, decimals=2) {
+  return v == null ? '—' : Number(v).toFixed(decimals);
+}
+function fmtUSD(v) {
+  if (v == null) return '—';
+  const s = Math.abs(v) >= 1000
+    ? '$' + (v/1000).toFixed(2) + 'k'
+    : '$' + Number(v).toFixed(2);
+  return (v >= 0 ? '+' : '') + s;
+}
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return '—';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's';
+  const h = Math.floor(m / 60);
+  return h + 'h ' + (m % 60) + 'm';
+}
+function fmtTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+function showToast(msg, ok=true) {
+  const el = document.getElementById('toast');
+  el.className = `toast align-items-center text-bg-${ok?'success':'danger'} border-0`;
+  document.getElementById('toastMsg').textContent = msg;
+  bootstrap.Toast.getOrCreateInstance(el, {delay:3000}).show();
+}
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+// ─── Status polling ───────────────────────────────────────────────────────────
+async function pollStatus() {
+  try {
+    const [status, portfolio, trades, session] = await Promise.all([
+      api('/api/status'),
+      api('/api/portfolio'),
+      api('/api/trades'),
+      api('/api/session'),
+    ]);
+    updateStatus(status);
+    updatePortfolio(portfolio);
+    allTrades = trades.trades || [];
+    renderTradeLog();
+    updateSession(session);
+    updatePrice(status.last_price);
+  } catch(e) { console.error('Poll error:', e); }
+}
+
+function updateStatus(s) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = 'status-dot ' + (s.emergency_stop ? 'dot-emergency' : (s.running ? 'dot-running' : 'dot-stopped'));
+  txt.textContent = s.emergency_stop ? 'EMERGENCY STOP' : (s.running ? 'Running' : 'Stopped');
+  document.getElementById('modeBadge').textContent = s.mode;
+  document.getElementById('styleBadge').textContent = s.style.replace('_',' ');
+  document.getElementById('modeSelect').value = s.mode;
+  document.getElementById('styleSelect').value = s.style;
+  document.getElementById('btnStart').disabled = s.running;
+  document.getElementById('btnStop').disabled = !s.running;
+}
+
+function updatePrice(price) {
+  if (!price) return;
+  const el = document.getElementById('priceDisplay');
+  el.textContent = '$' + Number(price).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function updatePortfolio(p) {
+  document.getElementById('capital').textContent = '$' + fmt(p.current_capital);
+  const tpEl = document.getElementById('totalPnl');
+  tpEl.textContent = fmtUSD(p.total_pnl);
+  tpEl.className = 'stat-value ' + pnlClass(p.total_pnl);
+  const dpEl = document.getElementById('dayPnl');
+  dpEl.textContent = fmtUSD(p.daily_pnl) + ' day';
+  dpEl.className = 'fw-semibold ' + pnlClass(p.daily_pnl);
+  document.getElementById('winRate').textContent = fmt(p.win_rate) + '%';
+  document.getElementById('dayTrades').textContent = p.daily_trades;
+  document.getElementById('totalTrades').textContent = p.total_trades;
+
+  currentPosition = p.position || null;
+  const section = document.getElementById('positionSection');
+  if (p.position) {
+    section.classList.remove('d-none');
+    const pos = p.position;
+    document.getElementById('positionDetails').innerHTML = `
+      <div class="col-3"><div class="stat-label">Side</div>
+        <div class="fw-bold ${pos.side==='LONG'?'pnl-pos':'pnl-neg'}">${pos.side}</div></div>
+      <div class="col-3"><div class="stat-label">Entry</div><div>$${fmt(pos.entry_price)}</div></div>
+      <div class="col-3"><div class="stat-label">Current</div><div>$${fmt(pos.current_price)}</div></div>
+      <div class="col-3"><div class="stat-label">Unr. PnL</div>
+        <div class="${pnlClass(pos.unrealized_pnl)}">${fmtUSD(pos.unrealized_pnl)}</div></div>
+      <div class="col-3"><div class="stat-label">Stop Loss</div><div class="pnl-neg">$${fmt(pos.stop_loss)}</div></div>
+      <div class="col-3"><div class="stat-label">Take Profit</div><div class="pnl-pos">$${fmt(pos.take_profit)}</div></div>
+      <div class="col-3"><div class="stat-label">Qty</div><div>${fmt(pos.quantity,6)}</div></div>
+      <div class="col-3"><div class="stat-label">Signal</div><div class="text-info">${pos.signal_type||'—'}</div></div>
+    `;
+  } else {
+    section.classList.add('d-none');
+  }
+
+  // Update mini position info panel in Session card
+  const piEl = document.getElementById('positionInfo');
+  if (p.position) {
+    const pos = p.position;
+    piEl.classList.remove('d-none');
+    const sideEl = document.getElementById('piSide');
+    sideEl.textContent = pos.side;
+    sideEl.className = 'fw-semibold ' + (pos.side === 'LONG' ? 'pnl-pos' : 'pnl-neg');
+    document.getElementById('piEntry').textContent = '$' + fmt(pos.entry_price);
+    document.getElementById('piTP').textContent = '$' + fmt(pos.take_profit);
+    document.getElementById('piSL').textContent = '$' + fmt(pos.stop_loss);
+  } else {
+    piEl.classList.add('d-none');
+  }
+}
+
+function updateSession(s) {
+  document.getElementById('sessionName').textContent = s.session;
+  document.getElementById('sessionRec').textContent = s.recommendation;
+  document.getElementById('atrVal').textContent = fmt(s.atr, 2);
+  document.getElementById('volRatio').textContent = fmt(s.volume_ratio, 2) + 'x';
+}
+
+// ─── Trade Log ────────────────────────────────────────────────────────────────
+function setFilter(type, value, btn) {
+  filters[type] = value;
+  const group = btn.closest('.btn-group');
+  group.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTradeLog();
+}
+
+function applyFilters(trades) {
+  let result = [...trades];
+
+  if (filters.side !== 'ALL') {
+    result = result.filter(t => t.side === filters.side);
+  }
+
+  if (filters.date === 'today') {
+    const today = new Date().toDateString();
+    result = result.filter(t => new Date(t.timestamp).toDateString() === today);
+  } else if (filters.date === '7d') {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    result = result.filter(t => new Date(t.timestamp).getTime() > cutoff);
+  }
+
+  if (filters.sort === 'pnl') {
+    result.sort((a, b) => b.pnl - a.pnl);
+  } else if (filters.sort === 'duration') {
+    result.sort((a, b) => {
+      const da = a.entry_time ? new Date(a.timestamp) - new Date(a.entry_time) : 0;
+      const db = b.entry_time ? new Date(b.timestamp) - new Date(b.entry_time) : 0;
+      return db - da;
+    });
+  }
+  // default: already sorted newest-first from API
+
+  return result;
+}
+
+function renderTradeLog() {
+  const filtered = applyFilters(allTrades);
+  const tbody = document.getElementById('tradesTable');
+
+  // Summary stats
+  const today = new Date().toDateString();
+  const todayTrades = allTrades.filter(t => new Date(t.timestamp).toDateString() === today);
+  const wins = filtered.filter(t => t.pnl > 0).length;
+  const winRate = filtered.length > 0 ? ((wins / filtered.length) * 100).toFixed(1) + '%' : '—';
+  const durations = filtered
+    .filter(t => t.entry_time)
+    .map(t => new Date(t.timestamp) - new Date(t.entry_time));
+  const avgDur = durations.length > 0
+    ? fmtDuration(durations.reduce((a, b) => a + b, 0) / durations.length)
+    : '—';
+  const bestPnl = filtered.length > 0 ? Math.max(...filtered.map(t => t.pnl)) : null;
+
+  document.getElementById('tlToday').textContent = todayTrades.length + ' trades';
+  document.getElementById('tlWinRate').textContent = winRate;
+  document.getElementById('tlAvgDuration').textContent = avgDur;
+  document.getElementById('tlBest').textContent = bestPnl != null ? fmtUSD(bestPnl) : '—';
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-secondary py-3">No trades match filter</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(t => {
+    const pnlCls = pnlClass(t.pnl);
+    const duration = t.entry_time
+      ? fmtDuration(new Date(t.timestamp) - new Date(t.entry_time))
+      : '—';
+    return `<tr class="trade-row tlog-entry">
+      <td class="text-secondary">${t.trade_id}</td>
+      <td class="${t.side==='LONG'?'pnl-pos':'pnl-neg'}">${t.side}</td>
+      <td>$${fmt(t.entry_price)}</td>
+      <td class="text-secondary">${fmtTime(t.entry_time)}</td>
+      <td>$${fmt(t.exit_price)}</td>
+      <td class="text-secondary">${fmtTime(t.timestamp)}</td>
+      <td class="tlog-duration">${duration}</td>
+      <td>${fmt(t.quantity,4)}</td>
+      <td class="${pnlCls}">${fmtUSD(t.pnl)}</td>
+      <td class="text-info">${t.signal_type||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Market + 24h ─────────────────────────────────────────────────────────────
+async function pollMarket() {
+  try {
+    const m = await api('/api/market');
+    const chg = parseFloat(m.change_24h);
+    const el = document.getElementById('change24h');
+    el.textContent = (chg >= 0 ? '+' : '') + fmt(chg, 2) + '%';
+    el.className = 'small fw-semibold ' + pnlClass(chg);
+    document.getElementById('symbolLabel').textContent = m.symbol;
+    updatePrice(m.price);
+  } catch(e) {}
+}
+
+// ─── Chart ────────────────────────────────────────────────────────────────────
+async function loadChart(tf, btn) {
+  currentTf = tf;
+  document.querySelectorAll('#tfBtnGroup .btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  try {
+    const data = await api(`/api/chart/${tf}`);
+    renderChart(data);
+  } catch(e) { console.error('Chart error:', e); }
+}
+
+function renderChart(data) {
+  const labels = data.candles.map(c => {
+    const d = new Date(c.time);
+    return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  });
+  const closes = data.candles.map(c => c.close);
+  const smaf = data.candles.map(c => c.sma_fast);
+  const smas = data.candles.map(c => c.sma_slow);
+  const smat = data.candles.map(c => c.sma_trend);
+
+  // Build entry/exit marker arrays from recent trades and active position
+  const entryValues = new Array(data.candles.length).fill(null);
+  const exitValues  = new Array(data.candles.length).fill(null);
+  const candleTimes = data.candles.map(c => new Date(c.time).getTime());
+
+  function nearestCandleIndex(isoTs) {
+    const t = new Date(isoTs).getTime();
+    let best = -1, bestDiff = Infinity;
+    candleTimes.forEach((ct, i) => { const d = Math.abs(ct - t); if (d < bestDiff) { bestDiff = d; best = i; } });
+    return bestDiff < 4 * 60 * 60 * 1000 ? best : -1; // ignore if >4h away
+  }
+
+  // Mark completed trades from the trade log
+  allTrades.slice(0, 20).forEach(t => {
+    if (t.entry_time) { const i = nearestCandleIndex(t.entry_time); if (i >= 0) entryValues[i] = t.entry_price; }
+    if (t.timestamp)  { const i = nearestCandleIndex(t.timestamp);  if (i >= 0) exitValues[i]  = t.exit_price;  }
+  });
+
+  // Mark open position entry
+  if (currentPosition) {
+    const i = nearestCandleIndex(currentPosition.open_time);
+    if (i >= 0) entryValues[i] = currentPosition.entry_price;
+  }
+
+  const cfg = {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Price', data: closes, borderColor: '#58a6ff', borderWidth: 1.5,
+          pointRadius: 0, fill: false, tension: 0.1 },
+        { label: 'SMA Fast', data: smaf, borderColor: '#f0883e', borderWidth: 1,
+          pointRadius: 0, fill: false, borderDash: [3,3] },
+        { label: 'SMA Slow', data: smas, borderColor: '#3fb950', borderWidth: 1,
+          pointRadius: 0, fill: false, borderDash: [5,5] },
+        { label: 'SMA Trend', data: smat, borderColor: '#e3b341', borderWidth: 1,
+          pointRadius: 0, fill: false, borderDash: [8,4] },
+        { label: 'Entry', data: entryValues, type: 'line', borderColor: '#3fb950',
+          pointRadius: entryValues.map(v => v ? 7 : 0),
+          pointBackgroundColor: '#3fb950', pointBorderColor: '#ffffff', pointBorderWidth: 2,
+          fill: false, showLine: false, spanGaps: false, order: 0 },
+        { label: 'Exit', data: exitValues, type: 'line', borderColor: '#f85149',
+          pointRadius: exitValues.map(v => v ? 7 : 0),
+          pointBackgroundColor: '#f85149', pointBorderColor: '#ffffff', pointBorderWidth: 2,
+          fill: false, showLine: false, spanGaps: false, order: 0 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      animation: false,
+      plugins: { legend: { labels: { color: '#8b949e', boxWidth: 12, font:{size:11} } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxTicksLimit: 10, font:{size:10} }, grid: { color: '#21262d' } },
+        y: { ticks: { color: '#8b949e', font:{size:10} }, grid: { color: '#21262d' } },
+      },
+    },
+  };
+
+  if (priceChart) priceChart.destroy();
+  priceChart = new Chart(document.getElementById('priceChartCanvas'), cfg);
+
+  const macdVals = data.macd.map(m => m.macd);
+  const sigVals = data.macd.map(m => m.signal);
+  const histVals = data.macd.map(m => m.histogram);
+  const histColors = histVals.map(v => v >= 0 ? '#3fb95066' : '#f8514966');
+
+  const macdCfg = {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Histogram', data: histVals, backgroundColor: histColors, order: 2 },
+        { label: 'MACD', data: macdVals, type: 'line', borderColor: '#58a6ff',
+          borderWidth: 1.5, pointRadius: 0, fill: false, order: 1 },
+        { label: 'Signal', data: sigVals, type: 'line', borderColor: '#f85149',
+          borderWidth: 1.5, pointRadius: 0, fill: false, order: 1 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      animation: false,
+      plugins: { legend: { labels: { color: '#8b949e', boxWidth: 12, font:{size:11} } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxTicksLimit: 10, font:{size:10} }, grid: { color: '#21262d' } },
+        y: { ticks: { color: '#8b949e', font:{size:10} }, grid: { color: '#21262d' } },
+      },
+    },
+  };
+  if (macdChart) macdChart.destroy();
+  macdChart = new Chart(document.getElementById('macdChartCanvas'), macdCfg);
+}
+
+// ─── Live Activity Terminal ───────────────────────────────────────────────────
+function appendActivityEvent(ev) {
+  localActivityLog.push(ev);
+  const log = document.getElementById('activityLog');
+  const ts = new Date(ev.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const badgeCls = `act-badge act-badge-${ev.type}`;
+  const msgCls = `act-${ev.type}`;
+  const row = document.createElement('div');
+  row.innerHTML = `<span class="act-ts">${ts}</span><span class="${badgeCls}">${ev.type}</span><span class="${msgCls}">${ev.message}</span>`;
+  log.appendChild(row);
+  // Auto-scroll if within 60px of bottom
+  if (log.scrollHeight - log.scrollTop - log.clientHeight < 60) {
+    log.scrollTop = log.scrollHeight;
+  }
+  document.getElementById('activityCount').textContent = localActivityLog.length + ' events';
+}
+
+function clearActivityLog() {
+  localActivityLog = [];
+  document.getElementById('activityLog').innerHTML = '';
+  document.getElementById('activityCount').textContent = '0 events';
+}
+
+function startSSE() {
+  if (activitySource) activitySource.close();
+  activitySource = new EventSource(`/api/stream/activity?since=${lastActivityId}`);
+  activitySource.onmessage = (e) => {
+    try {
+      const ev = JSON.parse(e.data);
+      lastActivityId = ev.id;
+      appendActivityEvent(ev);
+    } catch {}
+  };
+  activitySource.onerror = () => {
+    activitySource.close();
+    activitySource = null;
+    // Fall back to polling
+    setTimeout(pollActivity, 5000);
+  };
+}
+
+async function pollActivity() {
+  if (activitySource) return; // SSE is active
+  try {
+    const data = await api(`/api/activity?since=${lastActivityId}`);
+    (data.events || []).forEach(ev => {
+      lastActivityId = ev.id;
+      appendActivityEvent(ev);
+    });
+  } catch {}
+  setTimeout(pollActivity, 2000);
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+async function botAction(action) {
+  const r = await api(`/api/bot/${action}`, 'POST');
+  showToast(r.message, r.success);
+  pollStatus();
+}
+
+async function switchMode(mode) {
+  const r = await api('/api/mode/switch', 'POST', {mode});
+  showToast(r.message, r.success);
+}
+
+async function updateConfig(body) {
+  const r = await api('/api/config/update', 'POST', body);
+  showToast(r.message, r.success);
+}
+
+async function openManual(side) {
+  const r = await api('/api/position/manual', 'POST', {side});
+  showToast(r.message, r.success);
+  pollStatus();
+}
+
+async function closePosition() {
+  const r = await api('/api/position/close', 'POST');
+  showToast(r.message, r.success);
+  pollStatus();
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+initPanels();
+pollStatus();
+pollMarket();
+loadChart(currentTf, document.querySelector('#tfBtnGroup .btn'));
+setInterval(pollStatus, POLL_MS);
+setInterval(pollMarket, 15000);
+setInterval(() => loadChart(currentTf), 30000);
+
+// Start SSE; fall back to polling if browser doesn't support it
+if (typeof EventSource !== 'undefined') {
+  startSSE();
+} else {
+  pollActivity();
+}
+</script>
+</body>
+</html>

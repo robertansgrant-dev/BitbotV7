@@ -113,7 +113,7 @@ Look for these element references in the `updateMetrics()` function and related 
 
 3. **Verify functionality**
    - Test page loads without errors
-   - Verify terminal log still displays events correctly
+   - Verify terminal log still works correctly
    - Check responsive design on mobile viewport
 
 ## Success Checklist
