@@ -1,6 +1,7 @@
 """Bot control endpoints: status, start, stop, reset, mode switch."""
 
 import logging
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
@@ -22,6 +23,10 @@ def _r():
 @bot_bp.get("/api/status")
 def get_status():
     s = _s()
+    now = datetime.now(timezone.utc)
+    pause = s._signal_pause_until
+    cooldown = s._entry_cooldown_until
+    cb_active = bool(pause and now < pause)
     return jsonify(
         StatusResponse(
             running=s.running,
@@ -30,6 +35,9 @@ def get_status():
             emergency_stop=s.emergency_stop,
             last_error=s.last_error,
             last_price=s.last_price,
+            circuit_breaker_active=cb_active,
+            circuit_breaker_until=pause.isoformat() if cb_active else None,
+            entry_cooldown_until=cooldown.isoformat() if cooldown and now < cooldown else None,
         ).model_dump()
     )
 
@@ -66,10 +74,18 @@ def reset_bot():
         s.portfolio.daily_trades = 0
         s.portfolio.total_trades = 0
         s.portfolio.winning_trades = 0
+        s.portfolio.total_fees = 0.0
+        s.portfolio.peak_capital = s.settings.initial_capital
+        s.portfolio.max_drawdown = 0.0
         s.position = None
         s.emergency_stop = False
         s.last_error = None
         s.trades.clear()
+        s._signal_pause_until = None
+        s._entry_cooldown_until = None
+    # Sync risk manager equity and daily stats with the reset portfolio
+    s.risk_manager.equity = s.settings.initial_capital
+    s.risk_manager.reset_daily_stats()
     return jsonify(ActionResponse(success=True, message="Portfolio reset").model_dump())
 
 

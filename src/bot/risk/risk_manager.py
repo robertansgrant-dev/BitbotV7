@@ -230,7 +230,7 @@ class RiskManager:
                 ohlcv_df["volume"].rolling(self.cfg.volume_sma_period).mean().iloc[-1]
             )
             current_vol = float(ohlcv_df["volume"].iloc[-1])
-            has_volume = current_vol > vol_sma * 1.2
+            has_volume = current_vol >= vol_sma * 0.70  # matches signal_generator._VOLUME_RATIO_MIN
         except Exception as exc:
             logger.warning("Volume calculation failed (%s) — assuming sufficient", exc)
             has_volume = True

@@ -91,6 +91,7 @@
   </div>
 </nav>
 
+<div id="cbBanner" class="alert alert-danger mb-0 rounded-0 text-center fw-semibold py-2" style="display:none;font-size:0.9rem;"></div>
 <div class="container-fluid px-3 py-3">
   <div class="row g-3">
 
@@ -601,6 +602,18 @@ function updateStatus(s) {
   document.getElementById('styleSelect').value = s.style;
   document.getElementById('btnStart').disabled = s.running;
   document.getElementById('btnStop').disabled = !s.running;
+
+  // Circuit breaker banner
+  const cbBanner = document.getElementById('cbBanner');
+  if (cbBanner) {
+    if (s.circuit_breaker_active) {
+      const until = s.circuit_breaker_until ? new Date(s.circuit_breaker_until).toUTCString().replace('GMT', 'UTC') : '?';
+      cbBanner.textContent = `⛔ Circuit breaker active — entries paused until ${until}`;
+      cbBanner.style.display = 'block';
+    } else {
+      cbBanner.style.display = 'none';
+    }
+  }
 }
 
 function updatePrice(price) {

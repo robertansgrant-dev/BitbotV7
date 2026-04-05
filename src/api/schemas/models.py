@@ -12,6 +12,9 @@ class StatusResponse(BaseModel):
     emergency_stop: bool
     last_error: Optional[str]
     last_price: float
+    circuit_breaker_active: bool = False
+    circuit_breaker_until: Optional[str] = None  # ISO timestamp or None
+    entry_cooldown_until: Optional[str] = None   # ISO timestamp or None
 
 
 class ActionResponse(BaseModel):

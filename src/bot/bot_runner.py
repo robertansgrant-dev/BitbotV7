@@ -198,8 +198,25 @@ class BotRunner:
         with state._lock:
             state.last_price = price
 
+        # Always manage open positions — circuit breaker only blocks NEW entries
+        if state.position:
+            self._manage_position(client, price)
+            return
+
+        # Check whether an existing CB pause is still active
+        now = datetime.now(timezone.utc)
+        with state._lock:
+            active_pause = state._signal_pause_until
+        if active_pause and now < active_pause:
+            logger.debug(
+                "Signal generation paused by circuit breaker until %s UTC",
+                active_pause.strftime("%H:%M"),
+            )
+            return
+
+        # Only evaluate CB when there is no active pause — prevents timer reset loop
         if state.risk_manager.check_daily_circuit_breaker():
-            pause_until = datetime.now(timezone.utc) + timedelta(hours=4)
+            pause_until = now + timedelta(hours=4)
             with state._lock:
                 state._signal_pause_until = pause_until
             msg = f"Daily circuit breaker — signals paused 4 h (until {pause_until.strftime('%H:%M')} UTC)"
@@ -207,10 +224,7 @@ class BotRunner:
             state.log_activity("RISK", msg, {"pause_until": pause_until.isoformat()})
             return
 
-        if state.position:
-            self._manage_position(client, price)
-        else:
-            self._seek_entry(client, price)
+        self._seek_entry(client, price)
 
     def _check_daily_reset(self) -> None:
         """Reset daily stats at midnight UTC."""
@@ -222,8 +236,10 @@ class BotRunner:
                 state.portfolio.daily_loss_pct = 0.0
                 state.portfolio.daily_trades = 0
                 state._daily_reset_date = today
+                state._signal_pause_until = None  # Clear any active CB pause on new trading day
             state.risk_manager.reset_daily_stats()
             logger.info("Daily reset for %s", today)
+            state.log_activity("BOT", f"Daily reset — new trading day {today}", {})
 
     def _manage_position(self, client: BinanceClient, price: float) -> None:
         """Update open position and check all exit conditions."""
