@@ -1,0 +1,91 @@
+# BitbotV7 — tunable parameters
+# All values here are overridable via .env; this file documents defaults and rationale.
+# Reload requires a bot restart (no hot-reload).
+
+# ── Bot / execution ────────────────────────────────────────────────────────────
+bot:
+  symbol: "BTCUSDT"
+  default_mode: "paper"          # paper | testnet | live
+  default_style: "scalping"      # scalping | day_trading | swing_trading
+  update_interval: 5             # loop tick interval in seconds
+  initial_capital: 1000.0        # starting equity in USDT
+
+# ── Risk manager (RiskConfig) ──────────────────────────────────────────────────
+risk:
+  # Position sizing — risk-per-trade (NOT fixed lot size)
+  risk_per_trade_pct: 0.005      # 0.5 % of equity risked per trade
+                                 # Assertion: must be < 0.05 (5 %) — hardcoded safety guard
+                                 # Tune: raise to 0.01 once win rate > 50 %
+
+  # Daily circuit-breaker
+  max_daily_loss_pct: 0.02       # 2 % of current equity; triggers 4-hour signal pause
+                                 # Tune: tighten to 0.015 for conservative sessions
+
+  # Exchange costs (Binance BTC/USDT spot)
+  fee_rate: 0.0004               # 0.04 % taker fee per leg (VIP-0 = 0.001, BNB discount = 0.0004)
+  slippage_rate: 0.0002          # 0.02 % estimated slippage per leg
+
+  # ATR-based stop / take-profit
+  atr_period: 14                 # ATR look-back (bars); 14 is Wilder standard
+  sl_atr_mult: 1.5               # SL = entry ± ATR × 1.5
+                                 # Tune: widen to 2.0 if SL hit rate > 25 %
+  tp_atr_mult: 2.5               # TP = entry ± ATR × 2.5  →  R:R ≈ 1.67
+                                 # Tune: reduce to 2.0 if time-exits > 70 %
+
+  # Time-exit hybrid logic
+  time_exit_minutes: 30          # Base max hold time (scalping default)
+                                 # Tune: raise to 45 if good trades consistently close after 30
+  max_hold_extension_minutes: 15 # Extra time granted when profit < fee buffer
+                                 # Tune: set to 0 to disable extension (revert to hard 30 min)
+
+  # Break-even trigger
+  breakeven_threshold_r: 0.5     # Snap SL to entry + fee when profit ≥ 0.5 × 1R
+                                 # Tune: lower to 0.3 for faster protection, 0.7 for more room
+
+  # Fee buffer for time extension
+  min_profit_fee_buffer: 1.5     # Extend hold only if unrealized profit ≥ 1.5 × round-trip cost
+                                 # Tune: raise to 2.0 to only extend when clearly covering costs
+
+  # Regime filter thresholds
+  adx_threshold: 20.0            # Minimum ADX for "trending" market classification
+                                 # Tune: raise to 25 for fewer but higher-quality entries
+  volume_sma_period: 20          # Rolling average window for volume comparison
+  min_volatility_pct: 0.004      # Minimum ATR/price ratio — filters dead markets
+                                 # Tune: raise to 0.006 during low-volatility regimes
+
+# ── Signal generator filters ───────────────────────────────────────────────────
+signals:
+  adx_trend_threshold: 20.0      # PULLBACK-specific ADX gate (separate from RM regime gate)
+                                 # Tune: raise to 25 if PULLBACK false-positives are high
+  volume_ratio_min: 0.70         # Volume must be ≥ 70 % of 20-bar SMA for any signal
+                                 # Tune: raise to 0.85 during thin overnight sessions
+
+# ── Style presets (scalping) ───────────────────────────────────────────────────
+# These override preset defaults when set. Edit src/config/presets.py for all styles.
+scalping:
+  position_size_pct: 20.0        # Fallback sizing when ATR unavailable (% of capital)
+  stop_loss_pct: 0.4             # Fixed SL fallback (% of entry price)
+  risk_reward: 2.0               # Used when ATR levels are unavailable
+  max_daily_trades: 100
+  sma_fast: 8
+  sma_slow: 20
+  sma_trend: 200
+  htf_timeframe: "5m"
+  trailing_stop: false
+  max_hold_minutes: 30
+  risk_per_trade_pct: 0.5        # % of capital — used for ATR-based sizing
+  atr_sl_multiplier: 1.5
+
+# ── Entry cooldowns ────────────────────────────────────────────────────────────
+cooldowns:
+  after_take_profit_minutes: 5   # Wait after TP hit before next entry
+  after_stop_loss_minutes: 3     # Wait after SL hit before next entry
+                                 # Rationale: prevents whipsaw re-entries in the
+                                 #            same choppy price action that stopped you out
+
+# ── Flask / API ────────────────────────────────────────────────────────────────
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: true                    # Set false in production (enables Werkzeug debugger)
+  secret_key: "change-me-in-production"

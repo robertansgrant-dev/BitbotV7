@@ -18,6 +18,12 @@ class StylePreset:
     sma_trend: int
     htf_timeframe: str
     trailing_stop: bool
+    max_hold_minutes: int
+    # Risk-per-trade sizing: size position so that hitting SL costs this % of capital
+    risk_per_trade_pct: float = 0.5
+    # ATR multiplier for stop loss distance (ATR * multiplier = SL offset in price)
+    # When ATR data is available this overrides the fixed stop_loss_pct
+    atr_sl_multiplier: float = 1.5
 
 
 SCALPING = StylePreset(
@@ -31,6 +37,9 @@ SCALPING = StylePreset(
     sma_trend=200,
     htf_timeframe="5m",
     trailing_stop=False,
+    max_hold_minutes=30,
+    risk_per_trade_pct=0.5,
+    atr_sl_multiplier=1.5,
 )
 
 DAY_TRADING = StylePreset(
@@ -44,6 +53,9 @@ DAY_TRADING = StylePreset(
     sma_trend=200,
     htf_timeframe="4h",
     trailing_stop=True,
+    max_hold_minutes=240,
+    risk_per_trade_pct=1.0,
+    atr_sl_multiplier=2.0,
 )
 
 SWING_TRADING = StylePreset(
@@ -57,6 +69,9 @@ SWING_TRADING = StylePreset(
     sma_trend=200,
     htf_timeframe="1d",
     trailing_stop=True,
+    max_hold_minutes=1440,
+    risk_per_trade_pct=1.5,
+    atr_sl_multiplier=3.0,
 )
 
 PRESETS: dict[str, StylePreset] = {

@@ -63,6 +63,10 @@ def get_activity() -> Response:
 
     state = _s()
     with state._lock:
+        # If last_id exceeds the current counter the service was restarted —
+        # return all buffered events so the feed doesn't stay blank.
+        if last_id > state._activity_counter:
+            last_id = 0
         events = [e for e in state.activity_events if e["id"] > last_id]
 
-    return jsonify({"events": events})
+    return jsonify({"events": events, "counter": state._activity_counter})

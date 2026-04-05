@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     max_position_value_pct: float = Field(default=80.0)
     emergency_stop: bool = Field(default=False)
     update_interval: int = Field(default=5)
+    # Taker fee rate per side (Binance BTC/USDT spot taker = 0.1%)
+    fee_rate: float = Field(default=0.001)
 
 
 def get_settings() -> Settings:

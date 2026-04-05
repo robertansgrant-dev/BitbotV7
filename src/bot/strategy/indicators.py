@@ -50,3 +50,37 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     low_prev_close = (df["low"] - df["close"].shift()).abs()
     true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
     return true_range.rolling(window=period).mean()
+
+
+def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Average Directional Index (Wilder smoothing).
+
+    Returns the ADX line (0-100). Values above 20 indicate a trending market;
+    below 20 indicates a ranging/choppy market. Uses the same True Range as atr().
+    """
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
+
+    # True Range components
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs(),
+    ], axis=1).max(axis=1)
+
+    # Directional movement
+    up_move = high.diff()
+    dn_move = (-low.diff())
+    plus_dm = up_move.where((up_move > dn_move) & (up_move > 0), 0.0)
+    minus_dm = dn_move.where((dn_move > up_move) & (dn_move > 0), 0.0)
+
+    # Wilder smoothing (alpha = 1/period)
+    alpha = 1.0 / period
+    atr_w = tr.ewm(alpha=alpha, adjust=False).mean()
+    plus_di = 100.0 * plus_dm.ewm(alpha=alpha, adjust=False).mean() / atr_w.replace(0, np.nan)
+    minus_di = 100.0 * minus_dm.ewm(alpha=alpha, adjust=False).mean() / atr_w.replace(0, np.nan)
+
+    denom = (plus_di + minus_di).replace(0, np.nan)
+    dx = 100.0 * (plus_di - minus_di).abs() / denom
+    return dx.ewm(alpha=alpha, adjust=False).mean()

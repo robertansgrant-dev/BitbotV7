@@ -2,7 +2,6 @@
 
 import logging
 import uuid
-from dataclasses import asdict
 from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
@@ -14,11 +13,7 @@ from src.api.schemas.models import (
     PortfolioResponse,
     TradeHistoryResponse,
 )
-from src.bot.risk.risk_manager import (
-    calculate_position_size,
-    calculate_stop_loss,
-    calculate_take_profit,
-)
+from src.bot.risk.risk_manager import TradeState
 from src.data.models.position import Position
 from src.data.models.trade import Trade
 
@@ -78,9 +73,12 @@ def get_trades():
             "exit_price": t.exit_price,
             "quantity": t.quantity,
             "pnl": t.pnl,
+            "fees": t.fees,
+            "net_pnl": t.net_pnl,
             "entry_time": t.entry_time.isoformat() if t.entry_time else None,
             "timestamp": t.timestamp.isoformat(),
             "signal_type": t.signal_type,
+            "exit_reason": t.exit_reason,
         }
         for t in reversed(s.trades[-50:])
     ]
@@ -108,10 +106,34 @@ def open_manual():
     except Exception as exc:
         return jsonify({"error": f"Price fetch failed: {exc}"}), 500
 
+    rm = s.risk_manager
     preset = s.preset
-    qty = calculate_position_size(s.portfolio.current_capital, price, preset, s.settings)
-    sl = calculate_stop_loss(price, body.side, preset)
-    tp = calculate_take_profit(price, body.side, preset)
+
+    # Sync RM config with current style before sizing
+    rm.cfg.sl_atr_mult = preset.atr_sl_multiplier
+    rm.cfg.tp_atr_mult = preset.atr_sl_multiplier * preset.risk_reward
+    rm.cfg.risk_per_trade_pct = preset.risk_per_trade_pct / 100
+
+    # Attempt ATR-based SL/TP via klines; fall back to fixed % if unavailable
+    sl: float
+    tp: float
+    atr_val: float = 0.0
+    try:
+        from src.bot.bot_runner import _to_df
+        df = _to_df(client.get_klines(s.settings.symbol, "1m", 200))
+        sl, tp, atr_val = rm.calculate_dynamic_levels(df, price, body.side)
+    except Exception as exc:
+        logger.warning("ATR levels unavailable for manual order (%s) — using fixed %%", exc)
+        offset_sl = price * (preset.stop_loss_pct / 100)
+        offset_tp = offset_sl * preset.risk_reward
+        if body.side == "LONG":
+            sl = price - offset_sl
+            tp = price + offset_tp
+        else:
+            sl = price + offset_sl
+            tp = price - offset_tp
+
+    qty = rm.calculate_position_size(price, sl)
 
     binance_side = "BUY" if body.side == "LONG" else "SELL"
     try:
@@ -130,12 +152,19 @@ def open_manual():
             stop_loss=sl,
             take_profit=tp,
             signal_type="MANUAL",
+            atr_at_entry=atr_val,
         )
         s.portfolio.daily_trades += 1
 
-    logger.info("Manual %s opened @ %.2f", body.side, price)
+    logger.info(
+        "Manual %s opened @ %.2f qty=%.6f sl=%.2f tp=%.2f",
+        body.side, price, qty, sl, tp,
+    )
     return jsonify(
-        ActionResponse(success=True, message=f"Opened {body.side} @ {price:.2f}").model_dump()
+        ActionResponse(
+            success=True,
+            message=f"Opened {body.side} @ {price:.2f}  sl={sl:.2f}  tp={tp:.2f}",
+        ).model_dump()
     )
 
 
@@ -154,9 +183,26 @@ def close_position():
     except Exception as exc:
         return jsonify({"error": f"Close failed: {exc}"}), 500
 
+    # Use RiskManager metrics for consistent fee + slippage accounting
+    closed_ts = TradeState(
+        id=str(uuid.uuid4())[:8],
+        side=pos.side,
+        entry_price=pos.entry_price,
+        entry_time=pos.open_time,
+        qty=pos.quantity,
+        sl=pos.stop_loss,
+        tp=pos.take_profit,
+        signal_type=pos.signal_type or "",
+        exit_price=price,
+        exit_reason="manual",
+    )
+    metrics = s.risk_manager.calculate_trade_metrics(closed_ts)
     pnl = pos.unrealized_pnl
+    fees = metrics.get("fees_paid", 0.0)
+    net = metrics.get("net_pnl", pnl)
+
     trade = Trade(
-        trade_id=str(uuid.uuid4())[:8],
+        trade_id=closed_ts.id,
         symbol=pos.symbol,
         side=pos.side,
         entry_price=pos.entry_price,
@@ -164,23 +210,30 @@ def close_position():
         quantity=pos.quantity,
         timestamp=datetime.now(timezone.utc),
         pnl=pnl,
+        fees=fees,
         entry_time=pos.open_time,
         mode=s.mode,
         style=s.style,
         signal_type=pos.signal_type,
+        exit_reason="manual",
     )
     with s._lock:
-        s.portfolio.current_capital += pnl
-        s.portfolio.daily_pnl += pnl
+        s.portfolio.current_capital += net
+        s.portfolio.daily_pnl += net
+        s.portfolio.total_fees += fees
         s.portfolio.total_trades += 1
-        if pnl > 0:
+        if net > 0:
             s.portfolio.winning_trades += 1
+        s.portfolio.update_drawdown()
         s.trades.append(trade)
         s.position = None
 
-    logger.info("Manual close @ %.2f pnl=%.4f", price, pnl)
+    s.risk_manager.record_trade_close(net)
+
+    logger.info("Manual close @ %.2f pnl=%.4f fees=%.4f net=%.4f", price, pnl, fees, net)
     return jsonify(
         ActionResponse(
-            success=True, message=f"Closed @ {price:.2f}  PnL={pnl:+.4f}"
+            success=True,
+            message=f"Closed @ {price:.2f}  PnL={pnl:+.4f}  fees={fees:.4f}  net={net:+.4f}",
         ).model_dump()
     )

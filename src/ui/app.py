@@ -6,6 +6,7 @@ from flask import Flask, render_template
 from flask_cors import CORS
 
 from src.api.routes.activity_routes import activity_bp
+from src.api.routes.analysis_routes import analysis_bp
 from src.api.routes.bot_routes import bot_bp
 from src.api.routes.config_routes import config_bp
 from src.api.routes.market_routes import market_bp
@@ -29,6 +30,7 @@ def create_app(bot_state, bot_runner) -> Flask:
     app.config["SECRET_KEY"] = bot_state.settings.secret_key
 
     app.register_blueprint(activity_bp)
+    app.register_blueprint(analysis_bp)
     app.register_blueprint(bot_bp)
     app.register_blueprint(market_bp)
     app.register_blueprint(portfolio_bp)
