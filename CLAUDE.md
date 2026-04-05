@@ -44,7 +44,8 @@ src/
 ├── main.py       Entry point
 config.yaml       All tunable parameters with rationale (not hot-reloaded)
 tests/
-└── test_risk_manager.py  16-trade replay harness (run: python -m tests.test_risk_manager)
+├── test_risk_manager.py     16-trade replay harness (run: python -m tests.test_risk_manager)
+└── test_circuit_breaker.py  13 tests: CB trigger/reset, daily reset, pause timer, equity tracking
 ```
 
 ## Modes
@@ -89,9 +90,10 @@ Class-based `RiskManager` configured via `RiskConfig` dataclass. One instance li
 - `apply_breakeven_logic(trade, price)` → Optional[float] — one-shot; activates at +0.5R; snaps SL to entry + fee/unit
 - `should_exit_by_time(trade, price, now)` → `(bool, reason)` — reasons: `"hold"`, `"extend_for_fees"`, `"time_exit"`
 - `calculate_trade_metrics(trade)` → dict — includes `gross_pnl`, `fees_paid`, `net_pnl`, `fee_drag_pct`, `mfe_pnl`, `exit_efficiency`
-- `check_daily_circuit_breaker()` → bool — trips at `max_daily_loss_pct` of current equity
+- `check_daily_circuit_breaker()` → bool — trips at `max_daily_loss_pct` of current equity (computed against current equity, not initial)
 - `record_trade_close(net_pnl)` — keeps RM equity in sync with portfolio
-- `reset_daily_stats()` — called at midnight UTC by `_check_daily_reset`
+- `reset_daily_stats()` — called at midnight UTC by `_check_daily_reset`; also called by `/api/bot/reset`
+- Volume threshold in `is_tradable_regime`: `current_vol >= vol_sma × 0.70` (aligned with `_VOLUME_RATIO_MIN` in signal_generator)
 
 ## Key Design Decisions
 
@@ -105,6 +107,9 @@ Class-based `RiskManager` configured via `RiskConfig` dataclass. One instance li
 - `BotState._entry_cooldown_until` — set after any close; `_seek_entry` skips until elapsed
   - TP hit → 5 min cooldown; SL hit → 3 min cooldown
 - `BotState._signal_pause_until` — set for 4 hours when daily circuit-breaker trips; softer than emergency_stop; resets at next daily reset
+  - **CB only blocks NEW entries** — open positions continue to receive SL/TP and time-exit checks during a CB pause
+  - CB check is skipped when a pause is already active (prevents timer reset loop that caused permanent halt)
+  - Cleared at midnight UTC by `_check_daily_reset()` and by `/api/bot/reset`
 
 ### Signal Filters (applied in order in `get_signal`)
 1. **HTF trend** — must be UP or DOWN (NEUTRAL → `weak_trend` skip)
@@ -139,7 +144,7 @@ Class-based `RiskManager` configured via `RiskConfig` dataclass. One instance li
 
 ## API Endpoints
 ```
-GET  /api/status             Bot state, mode, style
+GET  /api/status             Bot state, mode, style, circuit_breaker_active, circuit_breaker_until, entry_cooldown_until
 POST /api/bot/start          Start bot loop
 POST /api/bot/stop           Stop bot loop
 POST /api/bot/reset          Reset portfolio
@@ -170,6 +175,7 @@ GET  /api/analysis           Per-signal and per-exit-reason breakdown + profit_f
 - **Metrics strip** — price, ATR, vol ratio, session, daily trades, day P&L
 - **Favicon** — inline SVG orange circle with white B
 - **Manual Trade** buttons in Bot Controls panel
+- **Circuit breaker banner** — red alert bar below navbar when CB is active, shows expiry time (UTC)
 
 ## Coding Standards
 - PEP 8, 4-space indent, max 100-char lines
